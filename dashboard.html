@@ -1,0 +1,300 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Expense Tracker</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<style>
+  :root { --bg:#0f1115; --card:#171a21; --line:#232833; --text:#e6e9ef; --dim:#8b93a5; --accent:#4f8cff; --good:#3fbf7f; --bad:#ff6b6b; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:14px/1.5 system-ui, sans-serif; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 20px; }
+  h1 { font-size: 20px; margin: 0; }
+  .bar { display:flex; align-items:center; gap:12px; margin-bottom:18px; flex-wrap:wrap; }
+  .bar .spacer { flex:1; }
+  button { background:var(--accent); border:0; color:#fff; padding:7px 14px; border-radius:8px; cursor:pointer; font-size:13px; }
+  button.secondary { background:var(--line); }
+  button.ghost { background:transparent; border:1px solid var(--line); }
+  .cards { display:grid; grid-template-columns: repeat(auto-fit,minmax(220px,1fr)); gap:12px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; }
+  .card .label { color:var(--dim); font-size:12px; text-transform:uppercase; letter-spacing:.06em; }
+  .card .big { font-size:34px; font-weight:700; margin:4px 0 2px; }
+  .card .sub { color:var(--dim); font-size:12px; }
+  .good { color:var(--good); } .bad { color:var(--bad); }
+  .tabs { display:flex; gap:4px; margin:22px 0 12px; }
+  .tabs button { background:transparent; color:var(--dim); border-radius:8px 8px 0 0; }
+  .tabs button.active { background:var(--card); color:var(--text); }
+  .panel { background:var(--card); border:1px solid var(--line); border-radius:0 12px 12px 12px; padding:16px; }
+  .chartbox { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px; height:300px; }
+  .charts { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:12px; }
+  @media (max-width: 800px){ .charts{grid-template-columns:1fr;} }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th { text-align:left; color:var(--dim); font-weight:500; padding:6px 8px; border-bottom:1px solid var(--line); }
+  td { padding:6px 8px; border-bottom:1px solid var(--line); }
+  td.amt { text-align:right; font-variant-numeric: tabular-nums; }
+  select { background:var(--line); color:var(--text); border:1px solid var(--line); border-radius:6px; padding:4px 6px; font-size:12px; }
+  input { background:var(--line); color:var(--text); border:1px solid var(--line); border-radius:6px; padding:6px 8px; font-size:13px; }
+  .banner { background:#2b2410; border:1px solid #584a1e; color:#e8c96a; padding:8px 12px; border-radius:8px; margin-bottom:12px; font-size:13px; }
+  .sugg { border:1px solid var(--line); border-radius:10px; padding:10px 12px; margin-bottom:8px; display:flex; align-items:center; gap:10px; flex-wrap:wrap; background:#141821; }
+  .sugg .name { font-weight:600; }
+  .sugg .meta { color:var(--dim); font-size:12px; }
+  .tag { font-size:11px; padding:2px 8px; border-radius:10px; background:var(--line); color:var(--dim); }
+  .toast { position:fixed; bottom:18px; right:18px; background:var(--card); border:1px solid var(--line); padding:10px 16px; border-radius:10px; display:none; }
+  .hint { color:var(--dim); font-size:12px; margin:8px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="bar">
+    <h1>Expense Tracker</h1>
+    <span class="tag" id="monthLabel"></span>
+    <div class="spacer"></div>
+    <span class="tag" id="unreviewedChip"></span>
+    <button id="syncBtn">Sync now</button>
+  </div>
+
+  <div class="banner" id="banner" style="display:none"></div>
+
+  <div class="cards">
+    <div class="card">
+      <div class="label">Daily target</div>
+      <div class="big" id="target">–</div>
+      <div class="sub" id="targetSub"></div>
+    </div>
+    <div class="card">
+      <div class="label">Spent today</div>
+      <div class="big" id="spentToday">–</div>
+      <div class="sub" id="spentTodaySub"></div>
+    </div>
+    <div class="card">
+      <div class="label">Monthly income (normalized)</div>
+      <div class="big" id="income">–</div>
+      <div class="sub" id="incomeSub"></div>
+    </div>
+    <div class="card">
+      <div class="label">Fixed bills (normalized)</div>
+      <div class="big" id="fixed">–</div>
+      <div class="sub" id="fixedSub"></div>
+    </div>
+    <div class="card">
+      <div class="label">One-off spend, month to date</div>
+      <div class="big" id="oneOff">–</div>
+      <div class="sub" id="oneOffSub"></div>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <button class="active" data-tab="dash">Dashboard</button>
+    <button data-tab="txns">Transactions</button>
+    <button data-tab="rules">Rules</button>
+  </div>
+  <div class="panel" id="tab-dash">
+    <div class="charts">
+      <div class="chartbox"><canvas id="dailyChart"></canvas></div>
+      <div class="chartbox"><canvas id="burnChart"></canvas></div>
+    </div>
+    <div class="hint">Bars = one-off spend per day · line = the daily target as it evolved · burn-down compares cumulative spend against ideal pace.</div>
+  </div>
+  <div class="panel" id="tab-txns" style="display:none">
+    <div class="hint">Categorize one merchant and similar transactions follow. Checking "rule" teaches the classifier permanently.</div>
+    <div id="suggestions"></div>
+    <table id="txnTable">
+      <thead><tr><th>Date</th><th>Name</th><th>Merchant</th><th class="amt">Amount</th><th>Category</th><th>By</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+  <div class="panel" id="tab-rules" style="display:none">
+    <div class="hint">Rules auto-assign categories on every sync. "seed" rules came from your history; "learned" ones from your clicks.</div>
+    <table id="ruleTable">
+      <thead><tr><th>Pattern</th><th>Category</th><th>Origin</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <div style="margin-top:14px; display:flex; gap:8px; flex-wrap:wrap;">
+      <input id="newPattern" placeholder="pattern (e.g. trade coffee)" style="flex:1; min-width:220px;" />
+      <select id="newCat"></select>
+      <button class="secondary" id="addRule">Add rule</button>
+    </div>
+    <div class="hint" id="shapeInfo"></div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const CATEGORIES = ['recurring_weekly','recurring_biweekly','recurring_fourweekly','recurring_bimonthly','recurring_monthly','one_off','transfer','uncategorized'];
+const SHORT = { recurring_weekly:'weekly', recurring_biweekly:'biweekly', recurring_fourweekly:'4-weekly', recurring_bimonthly:'bimonthly', recurring_monthly:'monthly', one_off:'one-off', transfer:'transfer', uncategorized:'?' };
+let S = null, dailyChart = null, burnChart = null;
+const $ = (id) => document.getElementById(id);
+const fmt = (n) => '$' + Number(n).toLocaleString('en-US', { maximumFractionDigits: 0 });
+const toast = (msg) => { const t = $('toast'); t.textContent = msg; t.style.display = 'block'; setTimeout(() => t.style.display = 'none', 2500); };
+
+async function refresh() {
+  S = await (await fetch('/api/state')).json();
+  render();
+}
+
+function render() {
+  $('monthLabel').textContent = 'month ' + S.month;
+  const b = S.budget;
+  $('target').textContent = fmt(b.daily_target);
+  $('target').className = 'big ' + (b.daily_target < 0 ? 'bad' : 'good');
+  $('targetSub').textContent = S.days_remaining + ' day(s) left this month';
+  $('spentToday').textContent = fmt(b.spent_today);
+  const delta = b.daily_target - b.spent_today;
+  $('spentTodaySub').innerHTML = delta >= 0
+    ? '<span class="good">' + fmt(delta) + ' under target — tomorrow rises</span>'
+    : '<span class="bad">' + fmt(-delta) + ' over target — tomorrow falls</span>';
+  $('income').textContent = fmt(b.monthly_income);
+  $('incomeSub').textContent = 'avg of last 3 instances × cadence';
+  $('fixed').textContent = fmt(b.fixed_monthly);
+  $('fixedSub').textContent = fmt(b.monthly_income - b.fixed_monthly) + ' expendable / month';
+  $('oneOff').textContent = fmt(b.one_off_mtd);
+  $('oneOffSub').textContent = 'unreviewed spend: ' + fmt(b.unreviewed_mtd);
+  $('unreviewedChip').textContent = b.unreviewed_count + ' unreviewed';
+
+  if (b.unreviewed_count > 0) {
+    $('banner').style.display = 'block';
+    $('banner').textContent = b.unreviewed_count + ' unreviewed transaction(s) this month are being counted as spend (conservatively). Tag them in Transactions to sharpen the number.';
+  } else $('banner').style.display = 'none';
+
+  renderCharts();
+  renderSuggestions();
+  renderTxns();
+  renderRules();
+}
+
+function renderCharts() {
+  const labels = S.daily.map((d) => d.date.slice(8));
+  const spent = S.daily.map((d) => d.spent);
+  const target = S.daily.map((d) => d.target);
+  const cum = []; let acc = 0; for (const d of S.daily) { acc += Math.max(0, d.spent); cum.push(+acc.toFixed(2)); }
+  const pace = S.daily.map((_, i) => +((S.budget.monthly_income - S.budget.fixed_monthly) * (i + 1) / S.days_in_month).toFixed(2));
+
+  if (!dailyChart) {
+    dailyChart = new Chart($('dailyChart'), { type: 'bar',
+      data: { labels, datasets: [
+        { label: 'spent', data: spent, backgroundColor: '#4f8cff' },
+        { label: 'target', data: target, type: 'line', borderColor: '#3fbf7f', backgroundColor: '#3fbf7f', tension: .3, pointRadius: 2 }] },
+      options: { maintainAspectRatio: false, scales: { y: { ticks: { color: '#8b93a5' } }, x: { ticks: { color: '#8b93a5' } } }, plugins: { legend: { labels: { color: '#e6e9ef' } } } } });
+    burnChart = new Chart($('burnChart'), { type: 'line',
+      data: { labels, datasets: [
+        { label: 'cumulative', data: cum, borderColor: '#4f8cff', tension: .25, pointRadius: 2 },
+        { label: 'ideal pace', data: pace, borderColor: '#584a1e', borderDash: [6, 4], pointRadius: 0 }] },
+      options: { maintainAspectRatio: false, scales: { y: { ticks: { color: '#8b93a5' } }, x: { ticks: { color: '#8b93a5' } } }, plugins: { legend: { labels: { color: '#e6e9ef' } } } } });
+  } else {
+    dailyChart.data.labels = labels;
+    dailyChart.data.datasets[0].data = spent;
+    dailyChart.data.datasets[1].data = target;
+    dailyChart.update();
+    burnChart.data.labels = labels;
+    burnChart.data.datasets[0].data = cum;
+    burnChart.data.datasets[1].data = pace;
+    burnChart.update();
+  }
+}
+
+function catSelect(current, ids, withRule) {
+  const sel = document.createElement('select');
+  for (const c of CATEGORIES) {
+    const o = document.createElement('option');
+    o.value = c; o.textContent = SHORT[c];
+    sel.appendChild(o);
+  }
+  sel.value = current;
+  sel.onchange = async () => { await tag(ids, sel.value, false); };
+  return sel;
+}
+
+async function tag(ids, category, create_rule) {
+  const r = await fetch('/api/tag', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids, category, create_rule }) });
+  if (r.ok) { toast(ids.length + ' tagged as ' + SHORT[category] + (create_rule ? ' + rule' : '')); refresh(); }
+  else toast('failed: ' + JSON.stringify(await r.json()));
+}
+
+function renderSuggestions() {
+  const box = $('suggestions');
+  box.innerHTML = '';
+  if (!S.suggestions.length) { box.innerHTML = '<div class="hint">Nothing unreviewed. 🎉</div>'; return; }
+  for (const g of S.suggestions) {
+    const div = document.createElement('div');
+    div.className = 'sugg';
+    div.innerHTML = `<div style="flex:1"><span class="name"></span> <span class="meta"></span></div>`;
+    div.querySelector('.name').textContent = g.merchant;
+    div.querySelector('.meta').textContent = g.count + ' txn · ' + fmt(g.total) + ' net · suggested: ' + SHORT[g.suggested];
+    const sel = catSelect(g.suggested, null, false);
+    sel.dataset.group = g.key;
+    const apply = document.createElement('button');
+    apply.textContent = 'Apply to ' + g.count;
+    const rule = document.createElement('input'); rule.type = 'checkbox'; rule.checked = true;
+    const ruleLbl = document.createElement('label'); ruleLbl.style.fontSize = '12px'; ruleLbl.style.color = 'var(--dim)';
+    ruleLbl.appendChild(rule); ruleLbl.appendChild(document.createTextNode('rule'));
+    apply.onclick = async () => {
+      const ids = S.transactions.filter((t) => t.category === 'uncategorized' && (t.merchant_name || t.name).includes(g.key)).map((t) => t.transaction_id);
+      await tag(ids.length ? ids : [g.sample_id], sel.value, rule.checked);
+    };
+    div.appendChild(sel); div.appendChild(apply); div.appendChild(ruleLbl);
+    box.appendChild(div);
+  }
+}
+
+function renderTxns() {
+  const tb = $('txnTable').querySelector('tbody');
+  tb.innerHTML = '';
+  for (const t of S.transactions) {
+    const tr = document.createElement('tr');
+    const d = document.createElement('td'); d.textContent = t.date;
+    const n = document.createElement('td'); n.textContent = t.name;
+    const m = document.createElement('td'); m.textContent = t.merchant_name ?? ''; m.style.color = 'var(--dim)';
+    const a = document.createElement('td'); a.className = 'amt'; a.textContent = (t.amount < 0 ? '+' : '') + Math.abs(t.amount).toFixed(2);
+    if (t.amount < 0) a.classList.add('good');
+    const c = document.createElement('td');
+    c.appendChild(catSelect(t.category, [t.transaction_id], false));
+    const s = document.createElement('td'); s.innerHTML = '<span class="tag">' + t.source + '</span>';
+    tr.append(d, n, m, a, c, s);
+    tb.appendChild(tr);
+  }
+}
+
+function renderRules() {
+  const tb = $('ruleTable').querySelector('tbody');
+  tb.innerHTML = '';
+  for (const r of S.rules) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td></td><td></td><td><span class="tag"></span></td><td></td>';
+    tr.children[0].textContent = r.pattern;
+    tr.children[1].textContent = SHORT[r.category] ?? r.category;
+    tr.children[2].firstElementChild.textContent = r.origin;
+    const del = document.createElement('button'); del.className = 'ghost'; del.textContent = 'delete';
+    del.onclick = async () => { await fetch('/api/rules', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'delete', id: r.id }) }); refresh(); };
+    tr.children[3].appendChild(del);
+    tb.appendChild(tr);
+  }
+  $('shapeInfo').textContent = 'Derived shapes: ' + S.shapes.map((s) => s.pattern + ' → ' + fmt(s.monthly) + '/mo' + (s.inflow ? ' (in)' : '')).join(' · ');
+}
+
+// tabs
+document.querySelectorAll('.tabs button').forEach((b) => b.onclick = () => {
+  document.querySelectorAll('.tabs button').forEach((x) => x.classList.remove('active'));
+  b.classList.add('active');
+  for (const t of ['dash', 'txns', 'rules']) $('tab-' + t).style.display = (b.dataset.tab === t ? 'block' : 'none');
+});
+
+$('syncBtn').onclick = async () => {
+  $('syncBtn').textContent = 'Syncing…';
+  const r = await (await fetch('/api/sync', { method: 'POST' })).json();
+  $('syncBtn').textContent = 'Sync now';
+  toast(r.added + ' new transaction(s)');
+  refresh();
+};
+$('addRule').onclick = async () => {
+  await fetch('/api/rules', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'save', pattern: $('newPattern').value, category: $('newCat').value }) });
+  $('newPattern').value = '';
+  refresh();
+};
+const newCat = $('newCat');
+for (const c of CATEGORIES.slice(0, 7)) { const o = document.createElement('option'); o.value = c; o.textContent = SHORT[c]; newCat.appendChild(o); }
+
+refresh();
+setInterval(refresh, 60000);
+</script>
+</body>
+</html>

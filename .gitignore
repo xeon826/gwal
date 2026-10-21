@@ -1,0 +1,10 @@
+.env
+plaid-token.json
+plaid-cursor.json
+transactions.jsonl
+sync.log
+node_modules/
+.next/
+tracker.db
+*.tsbuildinfo
+next-env.d.ts
