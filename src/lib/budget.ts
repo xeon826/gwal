@@ -112,6 +112,49 @@ export function monthHistory(currentMonth: string): MonthHistory[] {
   return out;
 }
 
+export function merchantBreakdown() {
+  const rows = db
+    .select({
+      transactionId: schema.transactions.transactionId,
+      date: schema.transactions.date,
+      name: schema.transactions.name,
+      merchantName: schema.transactions.merchantName,
+      amount: schema.transactions.amount,
+    })
+    .from(schema.transactions)
+    .where(eq(schema.transactions.category, 'one_off'))
+    .orderBy(desc(schema.transactions.date))
+    .all();
+
+  const byMonth = new Map<string, Map<string, {
+    merchant: string; count: number; total: number;
+    txns: Array<{ transaction_id: string; date: string; name: string; amount: number }>;
+  }>>();
+  for (const t of rows) {
+    const mo = t.date.slice(0, 7);
+    const key = groupKeyOf({ name: t.name, merchant_name: t.merchantName });
+    if (!byMonth.has(mo)) byMonth.set(mo, new Map());
+    const groups = byMonth.get(mo)!;
+    if (!groups.has(key)) groups.set(key, { merchant: key, count: 0, total: 0, txns: [] });
+    const g = groups.get(key)!;
+    g.count++; g.total += t.amount;
+    g.txns.push({ transaction_id: t.transactionId, date: t.date, name: t.name, amount: t.amount });
+  }
+
+  const months = [...byMonth.keys()].sort();
+  const out: Record<string, {
+    total: number;
+    groups: Array<{ merchant: string; count: number; total: number; txns: Array<{ transaction_id: string; date: string; name: string; amount: number }> }>;
+  }> = {};
+  for (const mo of months) {
+    const groups = [...byMonth.get(mo)!.values()]
+      .map((g) => ({ ...g, total: +g.total.toFixed(2) }))
+      .sort((a, b) => Math.abs(b.total) - Math.abs(a.total));
+    out[mo] = { total: +groups.reduce((s, g) => s + g.total, 0).toFixed(2), groups };
+  }
+  return { months, byMonth: out };
+}
+
 export function computeState() {
   const now = new Date();
   const y = now.getFullYear(), m = now.getMonth(); // 0-based
@@ -186,9 +229,12 @@ export function computeState() {
       monthly_income, fixed_monthly, one_off_mtd, unreviewed_mtd,
       unreviewed_count: unreviewedRows.length,
       daily_target, spent_today,
+      projected_net: +(monthly_income - fixed_monthly - one_off_mtd).toFixed(2),
+      projected_net_at_pace: +(monthly_income - fixed_monthly - one_off_mtd - (one_off_mtd / dayNow) * daysRemaining).toFixed(2),
     },
     shapes: sh,
     history: monthHistory(mm),
+    merchants: merchantBreakdown(),
     daily, rules, categories: Object.keys(PERIODS).concat(['one_off', 'transfer', 'uncategorized']),
     suggestions: [...groups.values()].sort((a, b) => Math.abs(b.total) - Math.abs(a.total)),
     transactions: txns,

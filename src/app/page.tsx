@@ -29,8 +29,19 @@ interface State {
   budget: {
     monthly_income: number; fixed_monthly: number; one_off_mtd: number;
     unreviewed_mtd: number; unreviewed_count: number; daily_target: number; spent_today: number;
+    projected_net: number; projected_net_at_pace: number;
   };
   shapes: Array<{ rule_id: number; pattern: string; monthly: number; inflow: boolean }>;
+  merchants: {
+    months: string[];
+    byMonth: Record<string, {
+      total: number;
+      groups: Array<{
+        merchant: string; count: number; total: number;
+        txns: Array<{ transaction_id: string; date: string; name: string; amount: number }>;
+      }>;
+    }>;
+  };
   history: Array<{
     month: string; income: number; fixed: number; one_off: number; unreviewed: number;
     net: number; days_over_target: number | null; partial: boolean; live: boolean;
@@ -45,7 +56,7 @@ const fmt = (n: number) => '$' + n.toLocaleString('en-US', { maximumFractionDigi
 
 export default function Page() {
   const [S, setS] = useState<State | null>(null);
-  const [tab, setTab] = useState<'dash' | 'txns' | 'rules'>('dash');
+  const [tab, setTab] = useState<'dash' | 'txns' | 'rules' | 'merchants'>('dash');
   const [syncing, setSyncing] = useState(false);
   const [toast, setToast] = useState('');
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -134,11 +145,19 @@ export default function Page() {
           <div className="big">{fmt(b.one_off_mtd)}</div>
           <div className="sub">unreviewed spend: {fmt(b.unreviewed_mtd)}</div>
         </div>
+        <div className="card">
+          <div className="label">Projected month-end net</div>
+          <div className={'big ' + (b.projected_net < 0 ? 'bad' : 'good')}>{fmt(b.projected_net)}</div>
+          <div className="sub">
+            one-offs frozen · <span className={b.projected_net_at_pace < 0 ? 'bad' : 'good'}>{fmt(b.projected_net_at_pace)}</span> at current pace
+          </div>
+        </div>
       </div>
 
       <div className="tabs">
         <button className={tab === 'dash' ? 'active' : ''} onClick={() => setTab('dash')}>Dashboard</button>
         <button className={tab === 'txns' ? 'active' : ''} onClick={() => setTab('txns')}>Transactions</button>
+        <button className={tab === 'merchants' ? 'active' : ''} onClick={() => setTab('merchants')}>Merchants</button>
         <button className={tab === 'rules' ? 'active' : ''} onClick={() => setTab('rules')}>Rules</button>
       </div>
 
@@ -206,6 +225,8 @@ export default function Page() {
           </table>
         </div>
       )}
+
+      {tab === 'merchants' && <MerchantsTab merchants={S.merchants} />}
 
       {tab === 'rules' && <RulesTab rules={S.rules} shapes={S.shapes} onChanged={refresh} />}
       {toast && <div className="toast">{toast}</div>}
@@ -288,6 +309,77 @@ function SuggestionRow({ g, txns, onTag }: {
       <label style={{ fontSize: 12, color: 'var(--dim)' }}>
         <input type="checkbox" checked={rule} onChange={(e) => setRule(e.target.checked)} style={{ marginRight: 4 }} />rule
       </label>
+    </div>
+  );
+}
+
+function MerchantsTab({ merchants }: { merchants: State['merchants'] }) {
+  const [month, setMonth] = useState<string>(merchants.months.at(-1) ?? '');
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const data = merchants.byMonth[month];
+  if (!data) return <div className="panel"><div className="hint">No one-off transactions in {month || 'any month'}.</div></div>;
+  const max = Math.max(...data.groups.map((g) => Math.abs(g.total)), 1);
+
+  const toggle = (key: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  };
+
+  return (
+    <div className="panel">
+      <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 10 }}>
+        <label style={{ color: 'var(--dim)', fontSize: 13 }}>Month</label>
+        <select value={month} onChange={(e) => setMonth(e.target.value)}>
+          {merchants.months.map((m) => (
+            <option key={m} value={m}>{m}{m === merchants.months.at(-1) ? ' (live)' : ''}</option>
+          ))}
+        </select>
+        <span className="meta" style={{ color: 'var(--dim)', fontSize: 12 }}>
+          one-off spend grouped by merchant — click a row to expand
+        </span>
+      </div>
+      <table>
+        <thead><tr><th></th><th>Merchant</th><th className="amt">Txns</th><th className="amt">Total</th><th style={{ width: '35%' }}></th></tr></thead>
+        <tbody>
+          {data.groups.map((g) => {
+            const key = month + ':' + g.merchant;
+            const isOpen = expanded.has(key);
+            const rows = [
+              <tr key={g.merchant} style={{ cursor: 'pointer' }} onClick={() => toggle(key)}>
+                <td style={{ width: 24 }}>{isOpen ? '▾' : '▸'}</td>
+                <td className="name">{g.merchant}</td>
+                <td className="amt">{g.count}</td>
+                <td className="amt">{fmt(g.total)}</td>
+                <td>
+                  <div style={{ background: 'var(--accent)', height: 10, borderRadius: 5, width: (Math.abs(g.total) / max) * 100 + '%' }} />
+                </td>
+              </tr>,
+            ];
+            if (isOpen) {
+              for (const t of [...g.txns].sort((a, b) => (a.date < b.date ? 1 : -1))) {
+                rows.push(
+                  <tr key={t.transaction_id} style={{ background: '#12151c' }}>
+                    <td></td>
+                    <td style={{ color: 'var(--dim)', paddingLeft: 24 }}>{t.date} — {t.name.slice(0, 55)}</td>
+                    <td className="amt" colSpan={2}>{(t.amount < 0 ? '+' : '') + Math.abs(t.amount).toFixed(2)}</td>
+                    <td></td>
+                  </tr>,
+                );
+              }
+            }
+            return rows;
+          })}
+          <tr>
+            <td></td><td style={{ fontWeight: 700 }}>Total</td>
+            <td className="amt" style={{ fontWeight: 700 }}>{data.groups.reduce((s, g) => s + g.count, 0)}</td>
+            <td className="amt" style={{ fontWeight: 700 }}>{fmt(data.total)}</td>
+            <td></td>
+          </tr>
+        </tbody>
+      </table>
     </div>
   );
 }
