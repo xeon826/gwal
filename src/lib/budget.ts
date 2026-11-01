@@ -26,7 +26,7 @@ function shapes(rules: Rule[]): Shape[] {
   for (const r of rules) {
     if (!PERIODS[r.category]) continue;
     const last3 = byCat(r.category)
-      .filter((t) => textOf({ name: t.name, merchant_name: t.merchantName }).includes(r.pattern))
+      .filter((t) => textOf({ transaction_id: '', name: t.name, merchant_name: t.merchantName }).includes(r.pattern))
       .slice(0, 3);
     if (!last3.length) continue;
     const avg = last3.reduce((s, t) => s + t.amount, 0) / last3.length;
@@ -132,13 +132,13 @@ export function merchantBreakdown() {
   }>>();
   for (const t of rows) {
     const mo = t.date.slice(0, 7);
-    const key = groupKeyOf({ name: t.name, merchant_name: t.merchantName });
+    const key = groupKeyOf({ transaction_id: '', name: t.name, merchant_name: t.merchantName });
     if (!byMonth.has(mo)) byMonth.set(mo, new Map());
     const groups = byMonth.get(mo)!;
     if (!groups.has(key)) groups.set(key, { merchant: key, count: 0, total: 0, txns: [] });
     const g = groups.get(key)!;
     g.count++; g.total += t.amount;
-    g.txns.push({ transaction_id: t.transactionId, date: t.date, name: t.name, amount: t.amount });
+    g.txns.push({ transaction_id: t.transactionId, date: t.date, name: t.name ?? '', amount: t.amount });
   }
 
   const months = [...byMonth.keys()].sort();
@@ -176,8 +176,8 @@ export function computeState() {
       .all();
   const oneOff = flowRows('one_off');
   const unrev = flowRows('uncategorized');
-  const net = (rows: { amount: number }[], pred?: (t: { date: string }) => boolean) =>
-    rows.filter((t) => !pred || pred({ date: t.date })).reduce((s, t) => s + t.amount, 0);
+  const net = (rows: { date: string; amount: number }[], pred?: (t: { date: string }) => boolean) =>
+    rows.filter((t) => !pred || pred(t)).reduce((s, t) => s + t.amount, 0);
 
   const one_off_mtd = +net(oneOff).toFixed(2);
   const unreviewed_mtd = +net(unrev).toFixed(2);
@@ -199,7 +199,7 @@ export function computeState() {
     .orderBy(desc(schema.transactions.date)).all();
   const groups = new Map<string, { key: string; merchant: string; count: number; total: number; suggested: string; sample_id: string }>();
   for (const t of unreviewedRows) {
-    const key = groupKeyOf({ name: t.name, merchant_name: t.merchantName });
+    const key = groupKeyOf({ transaction_id: '', name: t.name, merchant_name: t.merchantName });
     if (!groups.has(key)) {
       groups.set(key, {
         key, merchant: key, count: 0, total: 0,

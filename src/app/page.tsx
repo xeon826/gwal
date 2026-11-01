@@ -168,10 +168,10 @@ export default function Page() {
               <Bar
                 data={{
                   labels: S.daily.map((d) => d.date.slice(8)),
-                  datasets: [
+                  datasets: ([
                     { label: 'spent', data: S.daily.map((d) => d.spent), backgroundColor: '#4f8cff' },
                     { label: 'target', data: S.daily.map((d) => d.target), type: 'line' as const, borderColor: '#3fbf7f', backgroundColor: '#3fbf7f', tension: 0.3, pointRadius: 2 },
-                  ],
+                  ] as unknown as NonNullable<React.ComponentProps<typeof Bar>['data']>['datasets']),
                 }}
                 options={{
                   maintainAspectRatio: false,
