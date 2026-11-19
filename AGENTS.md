@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Personal expense tracker: Next.js dashboard over a local SQLite DB, fed by the Plaid API (US Bank, Transactions product, Trial plan).
+Personal expense tracker: Next.js dashboard over a local SQLite DB, fed by the Plaid API.
 
 ## Commands
 
@@ -28,7 +28,7 @@ Cron is **not installed yet**. The dashboard's "Sync now" button writes to `trac
 `recurring_weekly` · `recurring_biweekly` · `recurring_fourweekly` · `recurring_bimonthly` · `recurring_monthly` · `one_off` · `transfer` · `uncategorized`
 
 - Recurring categories normalize to a monthly equivalent via periods-per-year: 52 / 26 / 13 / 24 / 12 (see `PERIODS` in `src/lib/classifier.ts`). Four-weekly ≠ monthly (13 ≠ 12).
-- `transfer` = the discard chute: self-transfers (Alpaca, ****↔****, Zelle-to-self, credit-card payments) are excluded from income, fixed, one-off, and net. Do not count them as expenses.
+- `transfer` = the discard chute: self-transfers between the user's own accounts (bank internal transfers, Zelle-to-self, credit-card payments) are excluded from income, fixed, one-off, and net. Do not count them as expenses.
 - `one_off` is net-signed: negative amounts (refunds, deposits) increase net.
 - Tags were considered and parked — do not implement without asking.
 

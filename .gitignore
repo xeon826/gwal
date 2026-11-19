@@ -8,3 +8,9 @@ node_modules/
 tracker.db
 *.tsbuildinfo
 next-env.d.ts
+budget.db*
+tracker.db-shm
+tracker.db-wal
+*.jsonl
+baycare-income.md
+bullshit.md
